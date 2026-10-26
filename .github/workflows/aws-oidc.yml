@@ -1,0 +1,34 @@
+name: aws-oidc-test
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # 允许这个任务向 GitHub 申请 OIDC 令牌
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show OIDC token claims (no secret is printed)
+        run: |
+          TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          echo "$TOKEN" | cut -d. -f2 | python3 -c "import sys,base64,json; p=sys.stdin.read().strip(); p+='='*(-len(p)%4); print(json.dumps(json.loads(base64.urlsafe_b64decode(p)), indent=2))"
+
+      - name: Get short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::485716415057:role/github-oidc-demo
+          aws-region: eu-west-2
+
+      - name: Who am I?
+        run: aws sts get-caller-identity
+
+      - name: List the bucket (allowed)
+        run: aws s3 ls s3://taoying-test-bucket
+
+      - name: Try to list all buckets (should be denied)
+        run: aws s3 ls || echo "Denied as expected - least privilege works"
